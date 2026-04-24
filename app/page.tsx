@@ -34,48 +34,65 @@ export default function LandingPage() {
   }
 
   return (
-    <main className="relative w-full min-h-screen overflow-hidden bg-black">
-      <div className="relative w-full min-h-screen">
+    <main
+      className="relative w-full min-h-screen overflow-hidden"
+      style={{
+        background:
+          "radial-gradient(ellipse at center, #2a1810 0%, #1a0f08 60%, #0a0604 100%)",
+      }}
+    >
+      <div className="relative w-full min-h-screen flex items-center justify-center">
         <Image
           src={landingImage}
           alt="ROOTS — where every family takes root"
           priority
           placeholder="blur"
-          fill
-          className="object-cover object-center"
-          sizes="100vw"
+          className="max-w-full max-h-screen w-auto h-auto object-contain"
+          style={{
+            maxHeight: "100vh",
+            width: "auto",
+            height: "auto",
+          }}
         />
 
         {/* Invisible click zone over the "ENTER OUR FAMILY" button in the image.
-            The button in the source image sits roughly at 30%-70% horizontal, 66%-73% vertical. */}
-        <button
-          onClick={() => { setShowLogin(true); setMode("enter"); }}
-          aria-label="Enter our family"
-          className="absolute cursor-pointer hover:scale-105 transition-transform duration-200 rounded-xl"
+            Positioned relative to the image itself, using a container that matches image aspect ratio. */}
+        <div
+          className="absolute pointer-events-none"
           style={{
-            left: "30%",
-            top: "66%",
-            width: "40%",
-            height: "7%",
-            background: "transparent",
-            border: "none",
+            height: "100vh",
+            aspectRatio: "1024 / 1536",
+            maxWidth: "100%",
           }}
-        />
+        >
+          <button
+            onClick={() => { setShowLogin(true); setMode("enter"); }}
+            aria-label="Enter our family"
+            className="absolute cursor-pointer hover:scale-105 transition-transform duration-200 rounded-xl pointer-events-auto"
+            style={{
+              left: "30%",
+              top: "66%",
+              width: "40%",
+              height: "7%",
+              background: "transparent",
+              border: "none",
+            }}
+          />
 
-        {/* Invisible click zone over the "FAMILY LOGIN" pill in the top-right */}
-        <button
-          onClick={() => { setShowLogin(true); setMode("enter"); }}
-          aria-label="Family login"
-          className="absolute cursor-pointer rounded-full"
-          style={{
-            right: "3%",
-            top: "2.5%",
-            width: "14%",
-            height: "3.5%",
-            background: "transparent",
-            border: "none",
-          }}
-        />
+          <button
+            onClick={() => { setShowLogin(true); setMode("enter"); }}
+            aria-label="Family login"
+            className="absolute cursor-pointer rounded-full pointer-events-auto"
+            style={{
+              right: "3%",
+              top: "2.5%",
+              width: "14%",
+              height: "3.5%",
+              background: "transparent",
+              border: "none",
+            }}
+          />
+        </div>
       </div>
 
       {/* Login modal */}
