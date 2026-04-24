@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Nunito:wght@400;500;600&display=swap');
+
+:root {
+  --paper: #f4ede0;
+  --paper-dark: #e8dcc4;
+}
+
+html, body {
+  background: var(--paper);
+  color: #2b2b2b;
+  font-family: 'Nunito', system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+/* Subtle paper texture via layered gradients */
+body {
+  background-image:
+    radial-gradient(ellipse at top, rgba(255, 250, 235, 0.4), transparent 60%),
+    radial-gradient(ellipse at bottom, rgba(139, 111, 71, 0.06), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* Polaroid caption field that looks like handwriting */
+.handwritten {
+  font-family: 'Caveat', cursive;
+  font-size: 1.4rem;
+  line-height: 1.1;
+  color: #2b2b2b;
+}
+
+/* Scatter rotation utilities (applied via inline style for randomness) */
+.polaroid {
+  background: #fdfcf7;
+  padding: 14px 14px 0 14px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15), 0 1px 3px rgba(0,0,0,0.08);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.polaroid:hover {
+  transform: rotate(0deg) scale(1.03) !important;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.22), 0 2px 6px rgba(0,0,0,0.1);
+  z-index: 10;
+}
+
+/* Tree node styling */
+.tree-node {
+  background: #fdfcf7;
+  border: 1px solid #c9b896;
+  border-radius: 8px;
+  padding: 12px 16px;
+  min-width: 140px;
+  text-align: center;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.tree-node:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(0,0,0,0.12);
+  border-color: #8b6f47;
+}
