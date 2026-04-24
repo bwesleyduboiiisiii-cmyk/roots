@@ -1,4 +1,5 @@
 import Link from "next/link";
+import SignOutButton from "@/components/SignOutButton";
 
 export default function Home() {
   return (
@@ -45,15 +46,7 @@ export default function Home() {
         </Link>
       </div>
 
-      <form action="/api/auth" method="post" className="mt-12">
-        <button
-          formMethod="delete"
-          className="text-sm text-sepia/60 hover:text-sepia underline"
-          type="submit"
-        >
-          sign out
-        </button>
-      </form>
+      <SignOutButton />
     </main>
   );
 }
