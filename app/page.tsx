@@ -42,33 +42,30 @@ export default function LandingPage() {
       }}
     >
       <div className="relative w-full min-h-screen flex items-center justify-center">
-        <Image
-          src={landingImage}
-          alt="ROOTS — where every family takes root"
-          priority
-          placeholder="blur"
-          className="max-w-full max-h-screen w-auto h-auto object-contain"
-          style={{
-            maxHeight: "100vh",
-            width: "auto",
-            height: "auto",
-          }}
-        />
-
-        {/* Invisible click zone over the "ENTER OUR FAMILY" button in the image.
-            Positioned relative to the image itself, using a container that matches image aspect ratio. */}
         <div
-          className="absolute pointer-events-none"
+          className="relative"
           style={{
             height: "100vh",
             aspectRatio: "1024 / 1536",
             maxWidth: "100%",
           }}
         >
+          <Image
+            src={landingImage}
+            alt="ROOTS — where every family takes root"
+            priority
+            placeholder="blur"
+            fill
+            className="object-contain"
+            sizes="(max-aspect-ratio: 1024/1536) 100vw, 66vh"
+          />
+
+          {/* Click zone over the "ENTER OUR FAMILY" wooden button.
+              Subtle pulsing glow so people know it's clickable. */}
           <button
             onClick={() => { setShowLogin(true); setMode("enter"); }}
             aria-label="Enter our family"
-            className="absolute cursor-pointer hover:scale-105 transition-transform duration-200 rounded-xl pointer-events-auto"
+            className="absolute cursor-pointer hover:scale-105 transition-transform duration-200 rounded-xl animate-pulse-slow"
             style={{
               left: "30%",
               top: "66%",
@@ -76,13 +73,16 @@ export default function LandingPage() {
               height: "7%",
               background: "transparent",
               border: "none",
+              boxShadow: "0 0 0 0 rgba(255, 220, 150, 0)",
+              animation: "pulseGlow 2.5s ease-in-out infinite",
             }}
           />
 
+          {/* Click zone over the "FAMILY LOGIN" pill in the top-right */}
           <button
             onClick={() => { setShowLogin(true); setMode("enter"); }}
             aria-label="Family login"
-            className="absolute cursor-pointer rounded-full pointer-events-auto"
+            className="absolute cursor-pointer rounded-full hover:scale-105 transition-transform"
             style={{
               right: "3%",
               top: "2.5%",
@@ -94,6 +94,17 @@ export default function LandingPage() {
           />
         </div>
       </div>
+
+      <style jsx>{`
+        @keyframes pulseGlow {
+          0%, 100% {
+            box-shadow: 0 0 0 0 rgba(255, 220, 150, 0);
+          }
+          50% {
+            box-shadow: 0 0 24px 6px rgba(255, 220, 150, 0.35);
+          }
+        }
+      `}</style>
 
       {/* Login modal */}
       {showLogin && (
