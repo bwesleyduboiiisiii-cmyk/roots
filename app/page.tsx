@@ -61,15 +61,15 @@ export default function LandingPage() {
           />
 
           {/* Click zone over the "ENTER OUR FAMILY" wooden button.
-              Coordinates calibrated to the actual button position in landing.png. */}
+              Coordinates calibrated from screenshot measurement. */}
           <button
             onClick={() => { setShowLogin(true); setMode("enter"); }}
             aria-label="Enter our family"
             className="absolute cursor-pointer hover:scale-105 transition-transform duration-200 rounded-xl"
             style={{
-              left: "37%",
-              top: "76%",
-              width: "43%",
+              left: "29%",
+              top: "59%",
+              width: "42%",
               height: "7%",
               background: "transparent",
               border: "none",
@@ -83,10 +83,10 @@ export default function LandingPage() {
             aria-label="Family login"
             className="absolute cursor-pointer rounded-full hover:scale-105 transition-transform"
             style={{
-              right: "8%",
-              top: "1.5%",
-              width: "16%",
-              height: "3%",
+              right: "4%",
+              top: "2%",
+              width: "18%",
+              height: "4%",
               background: "transparent",
               border: "none",
             }}
