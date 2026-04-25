@@ -61,19 +61,18 @@ export default function LandingPage() {
           />
 
           {/* Click zone over the "ENTER OUR FAMILY" wooden button.
-              Subtle pulsing glow so people know it's clickable. */}
+              Coordinates calibrated to the actual button position in landing.png. */}
           <button
             onClick={() => { setShowLogin(true); setMode("enter"); }}
             aria-label="Enter our family"
-            className="absolute cursor-pointer hover:scale-105 transition-transform duration-200 rounded-xl animate-pulse-slow"
+            className="absolute cursor-pointer hover:scale-105 transition-transform duration-200 rounded-xl"
             style={{
-              left: "30%",
-              top: "66%",
-              width: "40%",
+              left: "37%",
+              top: "76%",
+              width: "43%",
               height: "7%",
               background: "transparent",
               border: "none",
-              boxShadow: "0 0 0 0 rgba(255, 220, 150, 0)",
               animation: "pulseGlow 2.5s ease-in-out infinite",
             }}
           />
@@ -84,10 +83,10 @@ export default function LandingPage() {
             aria-label="Family login"
             className="absolute cursor-pointer rounded-full hover:scale-105 transition-transform"
             style={{
-              right: "3%",
-              top: "2.5%",
-              width: "14%",
-              height: "3.5%",
+              right: "8%",
+              top: "1.5%",
+              width: "16%",
+              height: "3%",
               background: "transparent",
               border: "none",
             }}
