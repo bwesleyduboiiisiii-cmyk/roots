@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useMemo, useEffect } from "react";
+import { useState, useRef, useMemo } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Person, Relationship } from "@/lib/types";
@@ -19,6 +19,10 @@ type Props = {
   familyId: string;
 };
 
+// The canvas is 2x the viewport height — gives room to scroll up into "branches" (sky)
+// and down into "deeper roots" (soil) even though the image stays the same.
+const CANVAS_VH = 200; // 200vh tall
+
 export default function FamilyTreeCanvas({
   people,
   relationships,
@@ -26,20 +30,26 @@ export default function FamilyTreeCanvas({
   familyId,
 }: Props) {
   const router = useRouter();
-  const containerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Pan and zoom state
+  // Pan and zoom state (horizontal pan only — vertical handled by browser scroll)
   const [scale, setScale] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [panX, setPanX] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-  const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+  const dragStart = useRef({ x: 0, panX: 0 });
 
-  // UI state
+  // Person interactions
   const [selected, setSelected] = useState<Person | null>(null);
   const [showAddPerson, setShowAddPerson] = useState(false);
   const [search, setSearch] = useState("");
 
-  // Layout calculation
+  // Relationship-builder mode
+  const [connectMode, setConnectMode] = useState<{
+    fromId: string;
+    fromName: string;
+  } | null>(null);
+
+  // Layout
   const positioned = useMemo(() => layoutPeople(people), [people]);
   const connections = useMemo(
     () => getRenderableConnections(relationships),
@@ -51,7 +61,6 @@ export default function FamilyTreeCanvas({
     return m;
   }, [positioned]);
 
-  // Filtered people for search
   const searchMatches = useMemo(() => {
     if (!search.trim()) return [];
     const q = search.toLowerCase();
@@ -61,132 +70,170 @@ export default function FamilyTreeCanvas({
     });
   }, [people, search]);
 
-  // Pan handlers
+  // Horizontal pan
   function handleMouseDown(e: React.MouseEvent) {
     if ((e.target as HTMLElement).closest("[data-interactive]")) return;
     setIsDragging(true);
-    dragStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+    dragStart.current = { x: e.clientX, panX };
   }
   function handleMouseMove(e: React.MouseEvent) {
     if (!isDragging) return;
-    setPan({
-      x: dragStart.current.panX + (e.clientX - dragStart.current.x),
-      y: dragStart.current.panY + (e.clientY - dragStart.current.y),
-    });
+    setPanX(dragStart.current.panX + (e.clientX - dragStart.current.x));
   }
   function handleMouseUp() {
     setIsDragging(false);
   }
-
-  // Touch handlers (basic)
   function handleTouchStart(e: React.TouchEvent) {
     if (e.touches.length !== 1) return;
+    if ((e.target as HTMLElement).closest("[data-interactive]")) return;
     const t = e.touches[0];
     setIsDragging(true);
-    dragStart.current = { x: t.clientX, y: t.clientY, panX: pan.x, panY: pan.y };
+    dragStart.current = { x: t.clientX, panX };
   }
   function handleTouchMove(e: React.TouchEvent) {
     if (!isDragging || e.touches.length !== 1) return;
     const t = e.touches[0];
-    setPan({
-      x: dragStart.current.panX + (t.clientX - dragStart.current.x),
-      y: dragStart.current.panY + (t.clientY - dragStart.current.y),
-    });
+    setPanX(dragStart.current.panX + (t.clientX - dragStart.current.x));
   }
   function handleTouchEnd() {
     setIsDragging(false);
   }
 
-  // Wheel zoom
   function handleWheel(e: React.WheelEvent) {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    setScale((s) => Math.min(2.5, Math.max(0.4, s + delta)));
+    if (e.ctrlKey || e.metaKey) {
+      // Ctrl+wheel = zoom (don't preventDefault so cmd+zoom still works on browser)
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      setScale((s) => Math.min(2.5, Math.max(0.4, s + delta)));
+    }
+    // Otherwise: native vertical scroll handles it
   }
 
-  // Focus on Me - reset pan/zoom to center
   function focusOnMe() {
     setScale(1);
-    setPan({ x: 0, y: 0 });
+    setPanX(0);
+    if (scrollContainerRef.current) {
+      // Scroll to roughly the middle (where Me sits)
+      const el = scrollContainerRef.current;
+      el.scrollTo({
+        top: (el.scrollHeight - el.clientHeight) / 2,
+        behavior: "smooth",
+      });
+    }
   }
 
-  // Focus on a specific person (used by search)
   function focusOnPerson(personId: string) {
     const p = positionMap.get(personId);
-    if (!p || !containerRef.current) return;
-    setScale(1.3);
-    const w = containerRef.current.clientWidth;
-    const h = containerRef.current.clientHeight;
-    // Position person at center of screen
-    setPan({
-      x: w / 2 - p.x * w * 1.3,
-      y: h / 2 - p.y * h * 1.3,
-    });
+    if (!p || !scrollContainerRef.current) return;
+    setScale(1.1);
+    setPanX(0);
+    const el = scrollContainerRef.current;
+    // Person's y is 0..1 within canvas — scroll to position them in the middle of viewport
+    const targetTop = p.y * el.scrollHeight - el.clientHeight / 2;
+    el.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
     setSearch("");
     setSelected(people.find((pp) => pp.id === personId) || null);
   }
 
+  function handlePersonClick(person: Person) {
+    if (connectMode) {
+      // We're in connection-building mode — second click sets up the relationship
+      if (connectMode.fromId === person.id) {
+        // clicked same person, cancel
+        setConnectMode(null);
+        return;
+      }
+      // Open the relationship-type chooser
+      setSelected(null);
+      setRelationshipChooser({
+        fromId: connectMode.fromId,
+        fromName: connectMode.fromName,
+        toId: person.id,
+        toName: `${person.first_name} ${person.last_name ?? ""}`.trim(),
+      });
+      setConnectMode(null);
+      return;
+    }
+    setSelected(person);
+  }
+
+  // Relationship chooser modal state
+  const [relationshipChooser, setRelationshipChooser] = useState<{
+    fromId: string;
+    fromName: string;
+    toId: string;
+    toName: string;
+  } | null>(null);
+
   return (
     <div
-      ref={containerRef}
       className="relative w-full overflow-hidden select-none"
-      style={{
-        height: "calc(100vh - 80px)",
-        background:
-          "radial-gradient(ellipse at center, #1a0f08 0%, #0a0604 100%)",
-        cursor: isDragging ? "grabbing" : "grab",
-      }}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onWheel={handleWheel}
+      style={{ height: "calc(100vh - 56px)" }}
     >
-      {/* The pannable/zoomable canvas */}
+      {/* Scrollable canvas (vertical scroll is native, horizontal is panX transform) */}
       <div
-        className="absolute inset-0 flex items-center justify-center"
+        ref={scrollContainerRef}
+        className="w-full h-full overflow-y-auto overflow-x-hidden"
         style={{
-          transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
-          transformOrigin: "center center",
-          transition: isDragging ? "none" : "transform 0.3s ease-out",
+          background:
+            "radial-gradient(ellipse at center, #1a0f08 0%, #0a0604 100%)",
+          cursor: isDragging ? "grabbing" : connectMode ? "crosshair" : "grab",
         }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onWheel={handleWheel}
       >
+        {/* Tall canvas - 2x viewport height. Image sits in the middle. */}
         <div
-          className="relative"
+          className="relative w-full"
           style={{
-            height: "100%",
-            aspectRatio: "1024 / 1536",
-            maxHeight: "calc(100vh - 80px)",
+            height: `${CANVAS_VH}vh`,
+            transform: `translateX(${panX}px) scale(${scale})`,
+            transformOrigin: "center center",
+            transition: isDragging ? "none" : "transform 0.3s ease-out",
           }}
         >
-          {/* Layer 1: Background image */}
-          <Image
-            src={treeBackground}
-            alt="Family tree background"
-            fill
-            priority
-            placeholder="blur"
-            className="object-contain pointer-events-none"
-            sizes="100vh"
-          />
+          {/* Background image — centered vertically in the tall canvas */}
+          <div
+            className="absolute left-1/2 -translate-x-1/2"
+            style={{
+              top: "50%",
+              transform: "translate(-50%, -50%)",
+              height: "100vh",
+              aspectRatio: "1024 / 1536",
+              maxWidth: "100vw",
+            }}
+          >
+            <Image
+              src={treeBackground}
+              alt="Family tree background"
+              fill
+              priority
+              placeholder="blur"
+              className="object-contain pointer-events-none"
+              sizes="100vh"
+            />
+          </div>
 
-          {/* Ground line indicator (subtle horizon) */}
+          {/* Subtle horizon line at the middle of the canvas */}
           <div
             className="absolute pointer-events-none"
             style={{
-              left: "5%",
-              right: "5%",
+              left: "10%",
+              right: "10%",
               top: "50%",
               height: "1px",
               background:
-                "linear-gradient(to right, transparent, rgba(217, 183, 105, 0.25), transparent)",
+                "linear-gradient(to right, transparent, rgba(217, 183, 105, 0.3), transparent)",
             }}
           />
 
-          {/* Layer 2: SVG connections */}
+          {/* SVG connections — covers entire tall canvas */}
           <svg
             className="absolute inset-0 w-full h-full pointer-events-none"
             viewBox="0 0 1 1"
@@ -201,25 +248,26 @@ export default function FamilyTreeCanvas({
                   key={i}
                   d={getConnectionPath(from, to, c.type)}
                   fill="none"
-                  stroke={c.type === "spouse" ? "#d9b769" : "#8b6f47"}
-                  strokeWidth={c.type === "spouse" ? 0.003 : 0.0025}
-                  strokeOpacity={0.7}
+                  stroke={c.type === "spouse" ? "#d9b769" : "#a87f4a"}
+                  strokeWidth={c.type === "spouse" ? 0.004 : 0.003}
+                  strokeOpacity={0.85}
                   vectorEffect="non-scaling-stroke"
                 />
               );
             })}
           </svg>
 
-          {/* Layer 3: Person nodes */}
+          {/* Person nodes positioned in normalized 0..1 space */}
           {positioned.map(({ person, x, y }) => {
             const isMe = person.generation === 0 && person.sort_order === 0;
+            const isConnectSource = connectMode?.fromId === person.id;
             return (
               <button
                 key={person.id}
                 data-interactive
                 onClick={(e) => {
                   e.stopPropagation();
-                  setSelected(person);
+                  handlePersonClick(person);
                 }}
                 className="absolute group"
                 style={{
@@ -232,15 +280,23 @@ export default function FamilyTreeCanvas({
                 }}
               >
                 <div
-                  className="rounded-full flex items-center justify-center text-cream font-serif transition-all group-hover:scale-110"
+                  className="rounded-full flex items-center justify-center font-serif transition-all group-hover:scale-110 overflow-hidden"
                   style={{
                     width: "56px",
                     height: "56px",
-                    background: isMe
+                    background: person.profile_photo_url
+                      ? "#3d2816"
+                      : isMe
                       ? "linear-gradient(135deg, #d9b769 0%, #8b6f47 100%)"
                       : "linear-gradient(135deg, #5c3d28 0%, #3d2816 100%)",
-                    border: isMe ? "3px solid #f4e4a8" : "2px solid #8b6f47",
-                    boxShadow: isMe
+                    border: isConnectSource
+                      ? "3px solid #f4e4a8"
+                      : isMe
+                      ? "3px solid #f4e4a8"
+                      : "2px solid #8b6f47",
+                    boxShadow: isConnectSource
+                      ? "0 0 0 4px rgba(244, 228, 168, 0.5), 0 0 24px rgba(217, 183, 105, 0.6)"
+                      : isMe
                       ? "0 4px 16px rgba(217, 183, 105, 0.5), 0 0 24px rgba(217, 183, 105, 0.3)"
                       : "0 4px 12px rgba(0,0,0,0.5)",
                     fontSize: "1.1rem",
@@ -248,8 +304,20 @@ export default function FamilyTreeCanvas({
                     color: isMe ? "#2b2b2b" : "#fdfcf7",
                   }}
                 >
-                  {person.first_name[0]}
-                  {person.last_name?.[0] ?? ""}
+                  {person.profile_photo_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={person.profile_photo_url}
+                      alt={person.first_name}
+                      className="w-full h-full object-cover"
+                      draggable={false}
+                    />
+                  ) : (
+                    <>
+                      {person.first_name[0]}
+                      {person.last_name?.[0] ?? ""}
+                    </>
+                  )}
                 </div>
                 <div
                   className="absolute left-1/2 -translate-x-1/2 mt-1 text-center whitespace-nowrap pointer-events-none"
@@ -258,7 +326,7 @@ export default function FamilyTreeCanvas({
                     fontFamily: "'Playfair Display', serif",
                     fontSize: "0.75rem",
                     color: "#f4e4a8",
-                    textShadow: "0 1px 4px rgba(0,0,0,0.9)",
+                    textShadow: "0 1px 4px rgba(0,0,0,0.95)",
                     fontWeight: 500,
                   }}
                 >
@@ -268,41 +336,39 @@ export default function FamilyTreeCanvas({
             );
           })}
 
-          {/* Empty state when no people */}
+          {/* Empty state */}
           {positioned.length === 0 && (
             <div
-              className="absolute inset-0 flex items-center justify-center pointer-events-none"
+              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-center"
             >
-              <div className="text-center">
-                <p
-                  style={{
-                    fontFamily: "'Playfair Display', serif",
-                    fontStyle: "italic",
-                    fontSize: "1.5rem",
-                    color: "#d9b769",
-                    textShadow: "0 2px 8px rgba(0,0,0,0.8)",
-                  }}
-                >
-                  Your tree awaits
-                </p>
-                <p
-                  className="mt-2"
-                  style={{
-                    fontFamily: "'Caveat', cursive",
-                    fontSize: "1.3rem",
-                    color: "#a8895a",
-                    textShadow: "0 2px 6px rgba(0,0,0,0.8)",
-                  }}
-                >
-                  Tap the + below to plant the first person
-                </p>
-              </div>
+              <p
+                style={{
+                  fontFamily: "'Playfair Display', serif",
+                  fontStyle: "italic",
+                  fontSize: "1.5rem",
+                  color: "#d9b769",
+                  textShadow: "0 2px 8px rgba(0,0,0,0.8)",
+                }}
+              >
+                Your tree awaits
+              </p>
+              <p
+                className="mt-2"
+                style={{
+                  fontFamily: "'Caveat', cursive",
+                  fontSize: "1.3rem",
+                  color: "#a8895a",
+                  textShadow: "0 2px 6px rgba(0,0,0,0.8)",
+                }}
+              >
+                Tap the + below to plant the first person
+              </p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Layer 4: Floating UI controls */}
+      {/* Floating UI - all OUTSIDE the scroll container, so they stay fixed */}
 
       {/* Top: Search */}
       <div
@@ -318,7 +384,7 @@ export default function FamilyTreeCanvas({
           placeholder="Search family members..."
           className="w-full px-4 py-2 rounded-full text-sm"
           style={{
-            background: "rgba(45, 30, 20, 0.85)",
+            background: "rgba(45, 30, 20, 0.9)",
             backdropFilter: "blur(8px)",
             border: "1px solid rgba(217, 183, 105, 0.4)",
             color: "#f4e4a8",
@@ -329,7 +395,7 @@ export default function FamilyTreeCanvas({
           <div
             className="mt-1 rounded-lg overflow-hidden"
             style={{
-              background: "rgba(45, 30, 20, 0.95)",
+              background: "rgba(45, 30, 20, 0.96)",
               backdropFilter: "blur(8px)",
               border: "1px solid rgba(217, 183, 105, 0.3)",
               maxHeight: "240px",
@@ -359,7 +425,32 @@ export default function FamilyTreeCanvas({
         )}
       </div>
 
-      {/* Right side: zoom controls */}
+      {/* Connect-mode indicator */}
+      {connectMode && (
+        <div
+          data-interactive
+          className="absolute top-20 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-full"
+          style={{
+            background: "rgba(217, 183, 105, 0.95)",
+            color: "#2b2b2b",
+            fontFamily: "'Playfair Display', serif",
+            fontSize: "0.85rem",
+            border: "1px solid rgba(244, 228, 168, 1)",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+          }}
+        >
+          Connect <strong>{connectMode.fromName}</strong> to who?
+          <button
+            onClick={() => setConnectMode(null)}
+            className="ml-3 underline"
+            style={{ color: "#5c3d28", fontStyle: "italic" }}
+          >
+            cancel
+          </button>
+        </div>
+      )}
+
+      {/* Right side: zoom + focus */}
       <div
         data-interactive
         className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-20"
@@ -376,7 +467,7 @@ export default function FamilyTreeCanvas({
         </ControlButton>
       </div>
 
-      {/* Bottom right: Add Person (the prominent action) */}
+      {/* Bottom right: Add Person */}
       <div
         data-interactive
         className="absolute bottom-6 right-6 z-20"
@@ -411,7 +502,7 @@ export default function FamilyTreeCanvas({
         </p>
       </div>
 
-      {/* Bottom left: Generation legend */}
+      {/* Bottom left legend */}
       <div
         className="absolute bottom-6 left-6 z-20 pointer-events-none"
         style={{
@@ -425,25 +516,49 @@ export default function FamilyTreeCanvas({
         ↓ roots: ancestors
       </div>
 
-      {/* Person detail modal */}
-      {selected && (
+      {/* Modals */}
+      {selected && !connectMode && (
         <PersonModal
           person={selected}
-          onClose={() => setSelected(null)}
+          familyId={familyId}
           familySlug={familySlug}
+          allPeople={people}
+          onClose={() => setSelected(null)}
+          onStartConnect={(p) => {
+            setSelected(null);
+            setConnectMode({
+              fromId: p.id,
+              fromName: `${p.first_name} ${p.last_name ?? ""}`.trim(),
+            });
+          }}
+          onChange={() => router.refresh()}
         />
       )}
 
-      {/* Add Person modal */}
       {showAddPerson && (
         <AddPersonModal
           familyId={familyId}
+          existingPeople={people}
           onClose={() => setShowAddPerson(false)}
           onAdded={() => {
             setShowAddPerson(false);
             router.refresh();
           }}
-          existingPeople={people}
+        />
+      )}
+
+      {relationshipChooser && (
+        <RelationshipChooserModal
+          familyId={familyId}
+          fromId={relationshipChooser.fromId}
+          fromName={relationshipChooser.fromName}
+          toId={relationshipChooser.toId}
+          toName={relationshipChooser.toName}
+          onClose={() => setRelationshipChooser(null)}
+          onSaved={() => {
+            setRelationshipChooser(null);
+            router.refresh();
+          }}
         />
       )}
     </div>
@@ -469,7 +584,7 @@ function ControlButton({
       style={{
         width: "44px",
         height: "44px",
-        background: "rgba(45, 30, 20, 0.85)",
+        background: "rgba(45, 30, 20, 0.9)",
         backdropFilter: "blur(8px)",
         border: "1px solid rgba(217, 183, 105, 0.4)",
         color: "#f4e4a8",
@@ -483,15 +598,80 @@ function ControlButton({
   );
 }
 
+// ===== PersonModal — shows person details + actions =====
 function PersonModal({
   person,
-  onClose,
+  familyId,
   familySlug,
+  allPeople,
+  onClose,
+  onStartConnect,
+  onChange,
 }: {
   person: Person;
-  onClose: () => void;
+  familyId: string;
   familySlug: string;
+  allPeople: Person[];
+  onClose: () => void;
+  onStartConnect: (p: Person) => void;
+  onChange: () => void;
 }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoError, setPhotoError] = useState("");
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setPhotoUploading(true);
+    setPhotoError("");
+
+    try {
+      const { uploadPersonPhoto } = await import("@/lib/upload-photo");
+      const result = await uploadPersonPhoto(file, familyId);
+
+      if (!result.ok) {
+        setPhotoError(result.error);
+        setPhotoUploading(false);
+        return;
+      }
+
+      const { createClient } = await import("@/lib/supabase-browser");
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("people")
+        .update({ profile_photo_url: result.url })
+        .eq("id", person.id);
+
+      if (error) {
+        setPhotoError(error.message);
+        setPhotoUploading(false);
+        return;
+      }
+
+      onChange();
+      onClose();
+    } catch (err: unknown) {
+      setPhotoError(err instanceof Error ? err.message : "Upload failed");
+      setPhotoUploading(false);
+    }
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    const { createClient } = await import("@/lib/supabase-browser");
+    const supabase = createClient();
+    await supabase.from("relationships").delete().or(
+      `person_id.eq.${person.id},related_person_id.eq.${person.id}`
+    );
+    await supabase.from("people").delete().eq("id", person.id);
+    onClose();
+    onChange();
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -500,35 +680,122 @@ function PersonModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="max-w-md w-full rounded-2xl p-6 shadow-2xl"
+        className="max-w-md w-full rounded-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
         style={{
           background: "linear-gradient(to bottom, #fdfcf7, #f4ede0)",
           border: "1px solid rgba(139, 111, 71, 0.3)",
         }}
       >
-        <h2 className="font-serif text-2xl text-ink">
+        {/* Photo at top */}
+        <div className="flex justify-center mb-4">
+          <div
+            className="relative rounded-full overflow-hidden"
+            style={{
+              width: "120px",
+              height: "120px",
+              background: "linear-gradient(135deg, #5c3d28, #3d2816)",
+              border: "3px solid #8b6f47",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.25)",
+            }}
+          >
+            {person.profile_photo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={person.profile_photo_url}
+                alt={person.first_name}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-cream font-serif text-3xl">
+                {person.first_name[0]}
+                {person.last_name?.[0] ?? ""}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Change photo button */}
+        <div className="text-center mb-4">
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handlePhotoChange}
+            className="hidden"
+          />
+          <button
+            onClick={() => photoInputRef.current?.click()}
+            disabled={photoUploading}
+            className="text-xs text-sepia hover:text-ink underline disabled:opacity-50"
+          >
+            {photoUploading
+              ? "Uploading..."
+              : person.profile_photo_url
+              ? "change photo"
+              : "+ add photo"}
+          </button>
+          {photoError && <p className="text-red-600 text-xs mt-1">{photoError}</p>}
+        </div>
+
+        <h2 className="font-serif text-2xl text-ink text-center">
           {person.first_name} {person.last_name}
         </h2>
         {person.nickname && (
-          <p className="handwritten text-sepia mt-1" style={{ fontSize: "1.2rem" }}>
+          <p className="handwritten text-sepia mt-1 text-center" style={{ fontSize: "1.2rem" }}>
             "{person.nickname}"
           </p>
         )}
         {person.maiden_name && (
-          <p className="text-sm text-sepia">née {person.maiden_name}</p>
+          <p className="text-sm text-sepia text-center">née {person.maiden_name}</p>
         )}
-        <p className="text-sepia mt-2">
+        <p className="text-sepia mt-2 text-center">
           {formatDates(person.birth_date, person.death_date)}
         </p>
-        {person.bio && (
-          <p className="mt-3 text-ink/90 leading-relaxed">{person.bio}</p>
+        {person.bio && <p className="mt-3 text-ink/90 leading-relaxed">{person.bio}</p>}
+
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <button
+            onClick={() => onStartConnect(person)}
+            className="py-2 bg-sepia text-white rounded font-serif text-sm tracking-wide hover:bg-ink"
+          >
+            Connect to...
+          </button>
+          <a
+            href={`/${familySlug}/album?person=${person.id}`}
+            className="py-2 border border-sepia/40 text-sepia rounded text-sm text-center hover:bg-sepia/10 flex items-center justify-center"
+          >
+            See photos
+          </a>
+        </div>
+
+        {!confirmDelete ? (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="mt-3 text-xs text-red-700/70 hover:text-red-700 underline block mx-auto"
+          >
+            Remove from tree
+          </button>
+        ) : (
+          <div className="mt-3 text-center">
+            <p className="text-xs text-red-800 mb-2">Remove permanently? Their connections will also be deleted.</p>
+            <div className="flex gap-2 justify-center">
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="text-xs px-3 py-1 border border-sepia/40 rounded text-sepia"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="text-xs px-3 py-1 bg-red-700 text-white rounded disabled:opacity-50"
+              >
+                {deleting ? "Removing..." : "Yes, remove"}
+              </button>
+            </div>
+          </div>
         )}
-        <a
-          href={`/${familySlug}/album?person=${person.id}`}
-          className="inline-block mt-4 text-sepia underline hover:text-ink"
-        >
-          See their photos →
-        </a>
+
         <button
           onClick={onClose}
           className="block mt-4 text-sm text-sepia/70 hover:text-sepia mx-auto"
@@ -540,16 +807,17 @@ function PersonModal({
   );
 }
 
+// ===== AddPersonModal — adds person + optional immediate relationship =====
 function AddPersonModal({
   familyId,
+  existingPeople,
   onClose,
   onAdded,
-  existingPeople,
 }: {
   familyId: string;
+  existingPeople: Person[];
   onClose: () => void;
   onAdded: () => void;
-  existingPeople: Person[];
 }) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -557,8 +825,37 @@ function AddPersonModal({
   const [birthYear, setBirthYear] = useState("");
   const [generation, setGeneration] = useState("0");
   const [bio, setBio] = useState("");
+  const [autoSibling, setAutoSibling] = useState(false);
+
+  // Photo
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  // Optional relationship
+  const [relPersonId, setRelPersonId] = useState("");
+  const [relType, setRelType] = useState<"" | "child-of" | "parent-of" | "spouse-of">("");
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 8 * 1024 * 1024) {
+      setError("Photo must be under 8MB");
+      return;
+    }
+    setPhotoFile(f);
+    setPhotoPreview(URL.createObjectURL(f));
+    setError("");
+  }
+
+  function clearPhoto() {
+    setPhotoFile(null);
+    setPhotoPreview(null);
+    if (photoInputRef.current) photoInputRef.current.value = "";
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -569,21 +866,96 @@ function AddPersonModal({
       const { createClient } = await import("@/lib/supabase-browser");
       const supabase = createClient();
 
+      // Step 1: upload photo if one was picked
+      let photoUrl: string | null = null;
+      if (photoFile) {
+        const { uploadPersonPhoto } = await import("@/lib/upload-photo");
+        const result = await uploadPersonPhoto(photoFile, familyId);
+        if (!result.ok) {
+          setError(result.error);
+          setLoading(false);
+          return;
+        }
+        photoUrl = result.url;
+      }
+
       const gen = parseInt(generation, 10);
       const sameGenCount = existingPeople.filter((p) => p.generation === gen).length;
 
-      const { error: insertError } = await supabase.from("people").insert({
-        family_id: familyId,
-        first_name: firstName.trim(),
-        last_name: lastName.trim() || null,
-        nickname: nickname.trim() || null,
-        birth_date: birthYear ? `${birthYear}-01-01` : null,
-        generation: gen,
-        sort_order: sameGenCount,
-        bio: bio.trim() || null,
-      });
+      const { data: newPerson, error: insertError } = await supabase
+        .from("people")
+        .insert({
+          family_id: familyId,
+          first_name: firstName.trim(),
+          last_name: lastName.trim() || null,
+          nickname: nickname.trim() || null,
+          birth_date: birthYear ? `${birthYear}-01-01` : null,
+          generation: gen,
+          sort_order: sameGenCount,
+          bio: bio.trim() || null,
+          profile_photo_url: photoUrl,
+        })
+        .select("id")
+        .single();
 
-      if (insertError) throw insertError;
+      if (insertError || !newPerson) throw insertError ?? new Error("Insert failed");
+
+      const newId = newPerson.id;
+      const relationshipsToInsert: Array<{
+        family_id: string;
+        person_id: string;
+        related_person_id: string;
+        relationship_type: "parent" | "spouse" | "sibling";
+      }> = [];
+
+      // Explicit relationship picked in form
+      if (relType && relPersonId) {
+        if (relType === "child-of") {
+          relationshipsToInsert.push({
+            family_id: familyId,
+            person_id: relPersonId,
+            related_person_id: newId,
+            relationship_type: "parent",
+          });
+        } else if (relType === "parent-of") {
+          relationshipsToInsert.push({
+            family_id: familyId,
+            person_id: newId,
+            related_person_id: relPersonId,
+            relationship_type: "parent",
+          });
+        } else if (relType === "spouse-of") {
+          relationshipsToInsert.push({
+            family_id: familyId,
+            person_id: newId,
+            related_person_id: relPersonId,
+            relationship_type: "spouse",
+          });
+          relationshipsToInsert.push({
+            family_id: familyId,
+            person_id: relPersonId,
+            related_person_id: newId,
+            relationship_type: "spouse",
+          });
+        }
+      }
+
+      // Auto-connect siblings (opt-in)
+      if (autoSibling) {
+        const sameGen = existingPeople.filter((p) => p.generation === gen);
+        for (const s of sameGen) {
+          relationshipsToInsert.push({
+            family_id: familyId,
+            person_id: newId,
+            related_person_id: s.id,
+            relationship_type: "sibling",
+          });
+        }
+      }
+
+      if (relationshipsToInsert.length > 0) {
+        await supabase.from("relationships").insert(relationshipsToInsert);
+      }
 
       onAdded();
     } catch (err: unknown) {
@@ -600,7 +972,7 @@ function AddPersonModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="max-w-md w-full rounded-2xl p-6 shadow-2xl"
+        className="max-w-md w-full rounded-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
         style={{
           background: "linear-gradient(to bottom, #fdfcf7, #f4ede0)",
           border: "1px solid rgba(139, 111, 71, 0.3)",
@@ -612,6 +984,60 @@ function AddPersonModal({
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-3">
+          {/* Photo upload at top */}
+          <div className="flex items-center gap-3 pb-2">
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handlePhotoSelect}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => photoInputRef.current?.click()}
+              className="rounded-full overflow-hidden flex items-center justify-center hover:opacity-90 transition-opacity flex-shrink-0"
+              style={{
+                width: "72px",
+                height: "72px",
+                background: photoPreview
+                  ? "transparent"
+                  : "linear-gradient(135deg, #f4ede0, #e8dcc4)",
+                border: "2px dashed rgba(139, 111, 71, 0.4)",
+              }}
+            >
+              {photoPreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={photoPreview}
+                  alt="Preview"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <span className="text-2xl text-sepia/60">+</span>
+              )}
+            </button>
+            <div className="text-xs text-sepia">
+              {photoPreview ? (
+                <>
+                  <p className="font-semibold text-ink">Photo selected</p>
+                  <button
+                    type="button"
+                    onClick={clearPhoto}
+                    className="underline mt-1"
+                  >
+                    Remove
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="font-semibold text-ink">Add a photo (optional)</p>
+                  <p className="opacity-70">JPG or PNG · up to 8MB</p>
+                </>
+              )}
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-2">
             <input
               type="text"
@@ -669,9 +1095,50 @@ function AddPersonModal({
             value={bio}
             onChange={(e) => setBio(e.target.value)}
             placeholder="A short story or memory (optional)"
-            rows={3}
+            rows={2}
             className="w-full px-3 py-2 border border-sepia/30 rounded bg-white/80 text-ink resize-none"
           />
+
+          {/* Optional relationship section */}
+          {existingPeople.length > 0 && (
+            <div className="border-t border-sepia/20 pt-3 space-y-2">
+              <p className="text-xs text-sepia uppercase tracking-wide">Connect to existing person (optional)</p>
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={relType}
+                  onChange={(e) => setRelType(e.target.value as typeof relType)}
+                  className="px-2 py-2 text-sm border border-sepia/30 rounded bg-white/80 text-ink"
+                >
+                  <option value="">No relationship</option>
+                  <option value="child-of">is child of</option>
+                  <option value="parent-of">is parent of</option>
+                  <option value="spouse-of">is spouse of</option>
+                </select>
+                <select
+                  value={relPersonId}
+                  onChange={(e) => setRelPersonId(e.target.value)}
+                  disabled={!relType}
+                  className="px-2 py-2 text-sm border border-sepia/30 rounded bg-white/80 text-ink disabled:opacity-50"
+                >
+                  <option value="">— pick person —</option>
+                  {existingPeople.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.first_name} {p.last_name ?? ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <label className="flex items-center gap-2 text-xs text-sepia mt-2">
+                <input
+                  type="checkbox"
+                  checked={autoSibling}
+                  onChange={(e) => setAutoSibling(e.target.checked)}
+                />
+                Auto-connect as sibling to everyone in this generation
+              </label>
+            </div>
+          )}
 
           {error && <p className="text-red-600 text-sm">{error}</p>}
 
@@ -693,6 +1160,162 @@ function AddPersonModal({
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// ===== RelationshipChooserModal — appears when click-to-connect picks two people =====
+function RelationshipChooserModal({
+  familyId,
+  fromId,
+  fromName,
+  toId,
+  toName,
+  onClose,
+  onSaved,
+}: {
+  familyId: string;
+  fromId: string;
+  fromName: string;
+  toId: string;
+  toName: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save(type: "parent" | "child" | "spouse" | "sibling") {
+    setSaving(true);
+    setError("");
+
+    try {
+      const { createClient } = await import("@/lib/supabase-browser");
+      const supabase = createClient();
+
+      const inserts: Array<{
+        family_id: string;
+        person_id: string;
+        related_person_id: string;
+        relationship_type: "parent" | "spouse" | "sibling";
+      }> = [];
+
+      if (type === "parent") {
+        // fromId is parent of toId
+        inserts.push({
+          family_id: familyId,
+          person_id: fromId,
+          related_person_id: toId,
+          relationship_type: "parent",
+        });
+      } else if (type === "child") {
+        // fromId is child of toId → toId is parent of fromId
+        inserts.push({
+          family_id: familyId,
+          person_id: toId,
+          related_person_id: fromId,
+          relationship_type: "parent",
+        });
+      } else if (type === "spouse") {
+        inserts.push(
+          {
+            family_id: familyId,
+            person_id: fromId,
+            related_person_id: toId,
+            relationship_type: "spouse",
+          },
+          {
+            family_id: familyId,
+            person_id: toId,
+            related_person_id: fromId,
+            relationship_type: "spouse",
+          }
+        );
+      } else if (type === "sibling") {
+        inserts.push(
+          {
+            family_id: familyId,
+            person_id: fromId,
+            related_person_id: toId,
+            relationship_type: "sibling",
+          },
+          {
+            family_id: familyId,
+            person_id: toId,
+            related_person_id: fromId,
+            relationship_type: "sibling",
+          }
+        );
+      }
+
+      const { error: insertError } = await supabase.from("relationships").insert(inserts);
+      if (insertError) throw insertError;
+      onSaved();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not save");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)" }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="max-w-sm w-full rounded-2xl p-6 shadow-2xl"
+        style={{
+          background: "linear-gradient(to bottom, #fdfcf7, #f4ede0)",
+          border: "1px solid rgba(139, 111, 71, 0.3)",
+        }}
+      >
+        <h2 className="font-serif text-xl text-ink text-center">Define relationship</h2>
+        <p className="text-center text-sepia mt-1 mb-5">
+          <strong>{fromName}</strong> is the <em>__</em> of <strong>{toName}</strong>
+        </p>
+
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={() => save("parent")}
+            disabled={saving}
+            className="py-3 bg-sepia text-white rounded font-serif tracking-wide hover:bg-ink disabled:opacity-50"
+          >
+            Parent
+          </button>
+          <button
+            onClick={() => save("child")}
+            disabled={saving}
+            className="py-3 bg-sepia text-white rounded font-serif tracking-wide hover:bg-ink disabled:opacity-50"
+          >
+            Child
+          </button>
+          <button
+            onClick={() => save("spouse")}
+            disabled={saving}
+            className="py-3 bg-sepia text-white rounded font-serif tracking-wide hover:bg-ink disabled:opacity-50"
+          >
+            Spouse
+          </button>
+          <button
+            onClick={() => save("sibling")}
+            disabled={saving}
+            className="py-3 bg-sepia text-white rounded font-serif tracking-wide hover:bg-ink disabled:opacity-50"
+          >
+            Sibling
+          </button>
+        </div>
+
+        {error && <p className="text-red-600 text-sm text-center mt-3">{error}</p>}
+
+        <button
+          onClick={onClose}
+          className="block mt-4 text-sm text-sepia/70 hover:text-sepia mx-auto"
+        >
+          cancel
+        </button>
       </div>
     </div>
   );
