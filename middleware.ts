@@ -3,11 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Public routes: landing page, login API, Next.js internals
+  // Public routes
   if (
     pathname === "/" ||
-    pathname.startsWith("/login") ||
-    pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/api/login") ||
+    pathname.startsWith("/api/register") ||
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico" ||
     pathname === "/icon.svg" ||
@@ -16,8 +16,8 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const authed = request.cookies.get("family_auth")?.value;
-  if (authed !== process.env.AUTH_SECRET) {
+  const session = request.cookies.get("roots_session")?.value;
+  if (!session || !session.includes(".")) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);

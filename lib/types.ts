@@ -1,5 +1,14 @@
+export type Family = {
+  id: string;
+  name: string;
+  slug: string;
+  created_by_name: string | null;
+  created_at: string;
+};
+
 export type Person = {
   id: string;
+  family_id: string;
   first_name: string;
   last_name: string | null;
   maiden_name: string | null;
@@ -15,6 +24,7 @@ export type Person = {
 
 export type Relationship = {
   id: string;
+  family_id: string;
   person_id: string;
   related_person_id: string;
   relationship_type: "parent" | "spouse" | "sibling";
@@ -23,6 +33,7 @@ export type Relationship = {
 
 export type Photo = {
   id: string;
+  family_id: string;
   image_url: string;
   caption: string | null;
   uploaded_by: string | null;
@@ -30,4 +41,10 @@ export type Photo = {
   tagged_people: string[];
   rotation: number;
   created_at: string;
+};
+
+export type AuthSession = {
+  family_id: string;
+  family_slug: string;
+  family_name: string;
 };
