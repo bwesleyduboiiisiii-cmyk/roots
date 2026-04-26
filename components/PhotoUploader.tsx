@@ -4,7 +4,9 @@ import { useState, useRef } from "react";
 import { createClient } from "@/lib/supabase-browser";
 import { useRouter } from "next/navigation";
 
-export default function PhotoUploader() {
+type Props = { familyId: string };
+
+export default function PhotoUploader({ familyId }: Props) {
   const router = useRouter();
   const supabase = createClient();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -35,9 +37,9 @@ export default function PhotoUploader() {
     setError("");
 
     try {
-      // 1. Upload to Supabase Storage
+      // 1. Upload to Supabase Storage, namespaced by family_id
       const ext = file.name.split(".").pop() || "jpg";
-      const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const filename = `${familyId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
       const { error: uploadError } = await supabase.storage
         .from("family-photos")
@@ -50,8 +52,9 @@ export default function PhotoUploader() {
         .from("family-photos")
         .getPublicUrl(filename);
 
-      // 3. Insert row in photos table
+      // 3. Insert row in photos table with family_id
       const { error: dbError } = await supabase.from("photos").insert({
+        family_id: familyId,
         image_url: urlData.publicUrl,
         caption: caption || null,
         uploaded_by: uploadedBy || null,

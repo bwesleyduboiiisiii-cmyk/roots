@@ -1,73 +1,104 @@
-# ROOTS — Setup Guide
+# ROOTS — Multi-Family Edition
 
-A family tree + polaroid photo album, built with Next.js, Supabase, and Vercel.
-Where your family comes from, and what you remember.
+A platform where families can each have their own private space for their tree and photo album. Built with Next.js, Supabase, and Vercel.
 
-## What you're getting
+## What this is
 
-- `/login` — password-gated entry
-- `/` — homepage with two big polaroid tiles linking to each section
-- `/album` — photo album with polaroid styling, upload form with caption
-- `/tree` — pan/zoom family tree with clickable nodes that open a bio modal
+ROOTS is now a multi-tenant platform. Each family registers with a unique name and password, and they get their own isolated:
+- Family tree (people + relationships)
+- Photo album (with their photos namespaced in storage)
+- URL: `your-domain.com/their-family-slug/tree`
 
-## 1. Set up Supabase (10 minutes)
+Anyone with your URL can register a new family.
 
-1. Go to https://supabase.com and create a new project. Wait for it to provision (~2 min).
-2. In your project, click **SQL Editor** in the sidebar.
-3. Open `supabase/schema.sql` from this project, copy all of it, paste into the SQL editor, click **Run**.
-4. (Optional) Paste `supabase/seed.sql` the same way if you want a sample family to see the tree working. You can delete those rows later.
-5. Go to **Settings → API**. Copy two values:
-   - Project URL (e.g. `https://abcdefg.supabase.co`)
-   - `anon public` key (a long string)
+## Architecture overview
 
-## 2. Set up this project locally
+- `/` — public landing page; sign in or register
+- `/[slug]/hub` — family's home dashboard (auth required, scoped to their family)
+- `/[slug]/tree` — that family's tree (only their data)
+- `/[slug]/album` — that family's album (only their photos)
+- `/api/login` — POST sign in, DELETE sign out
+- `/api/register` — POST to create a new family
 
-```bash
-npm install
-cp .env.example .env.local
+Auth is a signed cookie (HMAC-SHA256) containing `{family_id, family_slug, family_name}`. Server reads it on every request and scopes all queries by `family_id`.
+
+## Setup — fresh project
+
+### 1. Run the schema in Supabase
+
+If starting fresh, in Supabase SQL Editor run **both files in order**:
+1. `supabase/schema.sql` (original single-family base schema)
+2. `supabase/migration-multi-family.sql` (adds families table + family_id columns)
+
+### 2. Environment variables
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+AUTH_SECRET=long-random-string-32-plus-chars
 ```
 
-Edit `.env.local`:
+`FAMILY_PASSWORD` is no longer used — delete it from Vercel if it's there.
 
-```
-NEXT_PUBLIC_SUPABASE_URL=<your project URL>
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<your anon key>
-FAMILY_PASSWORD=<pick something your family can remember>
-AUTH_SECRET=<run: openssl rand -base64 32>
-```
+### 3. Deploy
 
-Run locally:
+Push to GitHub. Vercel auto-deploys.
 
-```bash
-npm run dev
-```
+## Setup — upgrading from single-family
 
-Open http://localhost:3000 and enter your family password.
+If you already had ROOTS running single-family:
 
-## 3. Deploy to Vercel (5 minutes)
+1. **Run only the migration** (`supabase/migration-multi-family.sql`) in Supabase SQL Editor. The original schema is already in place.
 
-1. Push this project to GitHub (new repo).
-2. Go to https://vercel.com and click **Add New → Project**.
-3. Import your GitHub repo.
-4. In **Environment Variables**, paste the same four values from your `.env.local`.
-5. Click **Deploy**. About 90 seconds later you'll have a live URL.
-6. In Vercel project settings, add a custom domain if you have one.
+2. **Decide what to do with existing data.** Existing rows have `family_id = NULL` and won't appear anywhere until assigned.
 
-After this, every `git push` to GitHub redeploys automatically.
+   Option A — wipe and start fresh:
+   ```sql
+   truncate people, relationships, photos cascade;
+   ```
 
-## 4. Adding real family members
+   Option B — preserve existing data:
+   - Register your family through the new UI first
+   - Then in Supabase SQL editor, replace `your-slug` with your actual family slug:
+   ```sql
+   update people set family_id = (select id from families where slug = 'your-slug') where family_id is null;
+   update relationships set family_id = (select id from families where slug = 'your-slug') where family_id is null;
+   update photos set family_id = (select id from families where slug = 'your-slug') where family_id is null;
+   ```
 
-There's no admin UI yet (see "Known gaps" below). For now, add people directly in Supabase:
+3. **Remove `FAMILY_PASSWORD`** from Vercel environment variables.
 
-1. Go to **Table Editor → people** in Supabase
-2. Click **Insert row** for each person
-3. Key fields:
-   - `generation`: 0 = you, -1 = your parents, -2 = your grandparents, 1 = your kids
-   - `sort_order`: left-to-right position within a generation (1, 2, 3...)
-4. Then **Table Editor → relationships** to connect them
-   - For spouses: insert two rows (both directions)
-   - For parent → child: insert one row per parent
+4. **Push the new code** and let Vercel redeploy.
 
-## Known gaps
+## Testing
 
-See `GAPS.md`.
+1. Open your site
+2. Click "ENTER OUR FAMILY"
+3. Switch to "New family" tab
+4. Fill in: family name, your name, password (6+ chars), confirm
+5. Click "PLANT THE SEED"
+6. You should land on `/your-family-slug/hub`
+
+Slug = lowercase, alphanumeric+hyphens, derived from family name. "The DuBois Family" → `the-dubois-family`.
+
+## ⚠️ Security status (read before going public)
+
+This is **Phase 1** of the multi-family build. Phase 2 (security hardening) is not yet done.
+
+**Do NOT publicize your URL until Phase 2 ships**, because:
+
+- ❌ No rate limiting on registration — bot could create 10,000 fake families
+- ❌ No CAPTCHA
+- ❌ No email verification — no account recovery if password lost
+- ❌ No storage quotas per family — one family could exhaust your Supabase storage
+
+**What IS in place:**
+
+- ✅ Passwords hashed with bcrypt (pgcrypto extension)
+- ✅ Sessions are HMAC-signed cookies (can't be forged without `AUTH_SECRET`)
+- ✅ All queries scoped by `family_id` server-side
+- ✅ Photo storage namespaced by family ID in storage path
+- ✅ Family slug uniqueness enforced at the database level
+- ✅ Password length minimum (6 chars) and family name validation
+
+Use it privately, share with trusted families only, until Phase 2 lands.

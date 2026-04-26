@@ -9,27 +9,76 @@ export default function LandingPage() {
   const router = useRouter();
   const [showLogin, setShowLogin] = useState(false);
   const [mode, setMode] = useState<"enter" | "register">("enter");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
 
-  async function handleEnter(e: React.FormEvent) {
+  // Login state
+  const [loginFamily, setLoginFamily] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  // Register state
+  const [regFamily, setRegFamily] = useState("");
+  const [regYourName, setRegYourName] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [regConfirm, setRegConfirm] = useState("");
+  const [regError, setRegError] = useState("");
+  const [regLoading, setRegLoading] = useState(false);
+
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
-    setError("");
+    setLoginLoading(true);
+    setLoginError("");
 
-    const res = await fetch("/api/auth", {
+    const res = await fetch("/api/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ familyName: loginFamily, password: loginPassword }),
     });
 
-    if (res.ok) {
-      router.push("/hub");
+    const data = await res.json();
+
+    if (res.ok && data.slug) {
+      router.push(`/${data.slug}/hub`);
       router.refresh();
     } else {
-      setError("That's not quite right. Try again?");
-      setLoading(false);
+      setLoginError(data.error || "Couldn't sign in");
+      setLoginLoading(false);
+    }
+  }
+
+  async function handleRegister(e: React.FormEvent) {
+    e.preventDefault();
+    setRegError("");
+
+    if (regPassword !== regConfirm) {
+      setRegError("Passwords don't match");
+      return;
+    }
+    if (regPassword.length < 6) {
+      setRegError("Password must be at least 6 characters");
+      return;
+    }
+
+    setRegLoading(true);
+
+    const res = await fetch("/api/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        familyName: regFamily,
+        yourName: regYourName,
+        password: regPassword,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.slug) {
+      router.push(`/${data.slug}/hub`);
+      router.refresh();
+    } else {
+      setRegError(data.error || "Couldn't create family");
+      setRegLoading(false);
     }
   }
 
@@ -60,8 +109,6 @@ export default function LandingPage() {
             sizes="(max-aspect-ratio: 1024/1536) 100vw, 66vh"
           />
 
-          {/* Click zone over the "ENTER OUR FAMILY" wooden button.
-              Coordinates calibrated from screenshot measurement. */}
           <button
             onClick={() => { setShowLogin(true); setMode("enter"); }}
             aria-label="Enter our family"
@@ -77,7 +124,6 @@ export default function LandingPage() {
             }}
           />
 
-          {/* Click zone over the "FAMILY LOGIN" pill in the top-right */}
           <button
             onClick={() => { setShowLogin(true); setMode("enter"); }}
             aria-label="Family login"
@@ -96,16 +142,11 @@ export default function LandingPage() {
 
       <style jsx>{`
         @keyframes pulseGlow {
-          0%, 100% {
-            box-shadow: 0 0 0 0 rgba(255, 220, 150, 0);
-          }
-          50% {
-            box-shadow: 0 0 24px 6px rgba(255, 220, 150, 0.35);
-          }
+          0%, 100% { box-shadow: 0 0 0 0 rgba(255, 220, 150, 0); }
+          50% { box-shadow: 0 0 24px 6px rgba(255, 220, 150, 0.35); }
         }
       `}</style>
 
-      {/* Login modal */}
       {showLogin && (
         <div
           className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
@@ -158,52 +199,79 @@ export default function LandingPage() {
             </div>
 
             {mode === "enter" ? (
-              <form onSubmit={handleEnter} className="space-y-3">
+              <form onSubmit={handleLogin} className="space-y-3">
                 <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Family password"
+                  type="text"
+                  value={loginFamily}
+                  onChange={(e) => setLoginFamily(e.target.value)}
+                  placeholder="Family name (e.g. The Smiths)"
                   autoFocus
                   className="w-full px-4 py-3 border border-sepia/30 rounded-lg bg-white/80 focus:outline-none focus:border-sepia"
                 />
-                {error && <p className="text-red-600 text-sm text-center">{error}</p>}
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="Family password"
+                  className="w-full px-4 py-3 border border-sepia/30 rounded-lg bg-white/80 focus:outline-none focus:border-sepia"
+                />
+                {loginError && <p className="text-red-600 text-sm text-center">{loginError}</p>}
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loginLoading}
                   className="w-full py-3 bg-sepia text-white rounded-lg hover:bg-ink transition-colors disabled:opacity-50 font-serif tracking-wider"
                 >
-                  {loading ? "Opening..." : "COME INSIDE"}
+                  {loginLoading ? "Opening..." : "COME INSIDE"}
                 </button>
               </form>
             ) : (
-              <div className="space-y-3">
+              <form onSubmit={handleRegister} className="space-y-3">
                 <input
                   type="text"
-                  placeholder="Your family's name (e.g. 'The Smiths')"
+                  value={regFamily}
+                  onChange={(e) => setRegFamily(e.target.value)}
+                  placeholder="Your family's name (e.g. The Smiths)"
+                  autoFocus
+                  required
                   className="w-full px-4 py-3 border border-sepia/30 rounded-lg bg-white/80 focus:outline-none focus:border-sepia"
                 />
                 <input
                   type="text"
+                  value={regYourName}
+                  onChange={(e) => setRegYourName(e.target.value)}
                   placeholder="Your name"
+                  required
                   className="w-full px-4 py-3 border border-sepia/30 rounded-lg bg-white/80 focus:outline-none focus:border-sepia"
                 />
                 <input
                   type="password"
-                  placeholder="Choose a family password"
+                  value={regPassword}
+                  onChange={(e) => setRegPassword(e.target.value)}
+                  placeholder="Choose a family password (6+ chars)"
+                  required
+                  minLength={6}
                   className="w-full px-4 py-3 border border-sepia/30 rounded-lg bg-white/80 focus:outline-none focus:border-sepia"
                 />
+                <input
+                  type="password"
+                  value={regConfirm}
+                  onChange={(e) => setRegConfirm(e.target.value)}
+                  placeholder="Confirm password"
+                  required
+                  className="w-full px-4 py-3 border border-sepia/30 rounded-lg bg-white/80 focus:outline-none focus:border-sepia"
+                />
+                {regError && <p className="text-red-600 text-sm text-center">{regError}</p>}
                 <button
-                  type="button"
-                  onClick={() => alert("Registration flow coming soon. For now, ask the family admin for the password.")}
-                  className="w-full py-3 bg-sepia text-white rounded-lg hover:bg-ink transition-colors font-serif tracking-wider"
+                  type="submit"
+                  disabled={regLoading}
+                  className="w-full py-3 bg-sepia text-white rounded-lg hover:bg-ink transition-colors disabled:opacity-50 font-serif tracking-wider"
                 >
-                  PLANT THE SEED
+                  {regLoading ? "Planting..." : "PLANT THE SEED"}
                 </button>
                 <p className="text-xs text-center text-sepia/70 mt-2">
                   You'll be the first person on the tree
                 </p>
-              </div>
+              </form>
             )}
           </div>
         </div>
