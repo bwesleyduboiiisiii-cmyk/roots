@@ -170,13 +170,52 @@ export default function FamilyTreeCanvas({
       className="relative w-full overflow-hidden select-none"
       style={{ height: "calc(100vh - 56px)" }}
     >
-      {/* Scrollable canvas (vertical scroll is native, horizontal is panX transform) */}
+      {/* FIXED BACKGROUND LAYER — stays put while content scrolls over it */}
       <div
-        ref={scrollContainerRef}
-        className="w-full h-full overflow-y-auto overflow-x-hidden"
+        className="absolute inset-0 pointer-events-none"
         style={{
           background:
             "radial-gradient(ellipse at center, #1a0f08 0%, #0a0604 100%)",
+        }}
+      >
+        <div
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+          style={{
+            height: "100%",
+            aspectRatio: "1672 / 941",
+            maxWidth: "100vw",
+          }}
+        >
+          <Image
+            src={treeBackground}
+            alt="Family tree background"
+            fill
+            priority
+            placeholder="blur"
+            className="object-cover"
+            sizes="100vw"
+          />
+        </div>
+
+        {/* Subtle horizon line — also fixed since it relates to the image */}
+        <div
+          className="absolute"
+          style={{
+            left: "10%",
+            right: "10%",
+            top: "50%",
+            height: "1px",
+            background:
+              "linear-gradient(to right, transparent, rgba(217, 183, 105, 0.3), transparent)",
+          }}
+        />
+      </div>
+
+      {/* SCROLLABLE FOREGROUND LAYER — people + SVG connections scroll over the fixed background */}
+      <div
+        ref={scrollContainerRef}
+        className="relative w-full h-full overflow-y-auto overflow-x-hidden"
+        style={{
           cursor: isDragging ? "grabbing" : connectMode ? "crosshair" : "grab",
         }}
         onMouseDown={handleMouseDown}
@@ -188,7 +227,7 @@ export default function FamilyTreeCanvas({
         onTouchEnd={handleTouchEnd}
         onWheel={handleWheel}
       >
-        {/* Tall canvas - 2x viewport height. Image sits in the middle. */}
+        {/* Tall canvas - 2x viewport height. Only people + connections live here. */}
         <div
           className="relative w-full"
           style={{
@@ -198,40 +237,6 @@ export default function FamilyTreeCanvas({
             transition: isDragging ? "none" : "transform 0.3s ease-out",
           }}
         >
-          {/* Background image — centered vertically in the tall canvas */}
-          <div
-            className="absolute left-1/2 -translate-x-1/2"
-            style={{
-              top: "50%",
-              transform: "translate(-50%, -50%)",
-              height: "100vh",
-              aspectRatio: "1024 / 1536",
-              maxWidth: "100vw",
-            }}
-          >
-            <Image
-              src={treeBackground}
-              alt="Family tree background"
-              fill
-              priority
-              placeholder="blur"
-              className="object-contain pointer-events-none"
-              sizes="100vh"
-            />
-          </div>
-
-          {/* Subtle horizon line at the middle of the canvas */}
-          <div
-            className="absolute pointer-events-none"
-            style={{
-              left: "10%",
-              right: "10%",
-              top: "50%",
-              height: "1px",
-              background:
-                "linear-gradient(to right, transparent, rgba(217, 183, 105, 0.3), transparent)",
-            }}
-          />
 
           {/* SVG connections — covers entire tall canvas */}
           <svg
