@@ -78,9 +78,9 @@ export default function HubOverlay({ familyName, familySlug }: Props) {
             aria-label="Explore the family tree"
             className="absolute cursor-pointer hover:scale-105 transition-transform duration-200 rounded-full"
             style={{
-              left: "18%",
+              left: "12%",
               top: "68.5%",
-              width: "27%",
+              width: "33%",
               height: "4.5%",
               background: "transparent",
               border: "none",
@@ -96,7 +96,7 @@ export default function HubOverlay({ familyName, familySlug }: Props) {
             style={{
               left: "54.5%",
               top: "68.5%",
-              width: "27%",
+              width: "33%",
               height: "4.5%",
               background: "transparent",
               border: "none",

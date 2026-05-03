@@ -178,24 +178,16 @@ export default function FamilyTreeCanvas({
             "radial-gradient(ellipse at center, #1a0f08 0%, #0a0604 100%)",
         }}
       >
-        <div
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
-          style={{
-            height: "100%",
-            aspectRatio: "1672 / 941",
-            maxWidth: "100vw",
-          }}
-        >
-          <Image
-            src={treeBackground}
-            alt="Family tree background"
-            fill
-            priority
-            placeholder="blur"
-            className="object-cover"
-            sizes="100vw"
-          />
-        </div>
+        <Image
+          src={treeBackground}
+          alt="Family tree background"
+          fill
+          priority
+          placeholder="blur"
+          className="object-cover"
+          sizes="100vw"
+          style={{ objectPosition: "center" }}
+        />
 
         {/* Subtle horizon line — also fixed since it relates to the image */}
         <div
@@ -959,7 +951,16 @@ function AddPersonModal({
       }
 
       if (relationshipsToInsert.length > 0) {
-        await supabase.from("relationships").insert(relationshipsToInsert);
+        const { error: relError } = await supabase
+          .from("relationships")
+          .upsert(relationshipsToInsert, {
+            onConflict: "person_id,related_person_id,relationship_type",
+            ignoreDuplicates: true,
+          });
+        if (relError) {
+          // Don't fail the whole add - person was created, just relationships had issues
+          console.warn("Could not save some relationships:", relError.message);
+        }
       }
 
       onAdded();
@@ -1254,7 +1255,12 @@ function RelationshipChooserModal({
         );
       }
 
-      const { error: insertError } = await supabase.from("relationships").insert(inserts);
+      const { error: insertError } = await supabase
+        .from("relationships")
+        .upsert(inserts, {
+          onConflict: "person_id,related_person_id,relationship_type",
+          ignoreDuplicates: true,
+        });
       if (insertError) throw insertError;
       onSaved();
     } catch (err: unknown) {
